@@ -3,9 +3,8 @@ import time
 import random
 
 # Configuration
-# If running Flask on the same machine, use localhost. 
-# If testing from another machine, use your computer's IP.
-SERVER_URL = "https://dash-board-visitor-counter.onrender.com"
+# SERVER_URL = "https://dash-board-visitor-counter.onrender.com"
+SERVER_URL = "http://127.0.0.1:5001"
 UPDATE_ENDPOINT = f"{SERVER_URL}/update"
 COMMAND_ENDPOINT = f"{SERVER_URL}/get_command"
 

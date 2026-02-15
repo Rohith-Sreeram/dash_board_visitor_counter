@@ -1,12 +1,24 @@
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
-import sqlite3
 import datetime
 import os
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 app = Flask(__name__)
+CORS(app)
 
-# In-memory storage for sensor data
+# Initialize Firebase
+# Make sure to place your 'serviceAccountKey.json' in the root directory
+if os.path.exists('serviceAccountKey.json'):
+    cred = credentials.Certificate('serviceAccountKey.json')
+    firebase_admin.initialize_app(cred)
+    db = firestore.client()
+else:
+    print("⚠️ Warning: serviceAccountKey.json not found. Firebase will not be initialized.")
+    db = None
+
+# In-memory storage for sensor data (fallback/cache)
 data = {
     "entered": 0,
     "departed": 0,
@@ -16,26 +28,47 @@ data = {
 # Command flag (0 if reset requested, 1 otherwise)
 command = 1
 
-def init_db():
-    conn = sqlite3.connect('data.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS counts 
-                 (timestamp DATETIME, entered INTEGER, departed INTEGER, inside INTEGER)''')
-    conn.commit()
-    conn.close()
+def load_latest_data():
+    global data
+    if not db:
+        return
+    try:
+        # Get the latest document from counts to restore state
+        docs = db.collection('counts').order_by('timestamp', direction=firestore.Query.DESCENDING).limit(1).get()
+        if docs:
+            latest = docs[0].to_dict()
+            data["entered"] = latest.get("entered", 0)
+            data["departed"] = latest.get("departed", 0)
+            data["inside"] = latest.get("inside", 0)
+            print(f"🔄 Loaded latest data from Firebase: {data}")
+    except Exception as e:
+        print(f"⚠️ Could not load latest data: {e}")
 
-init_db()
+load_latest_data()
 
 def log_data(e, d, i):
-    conn = sqlite3.connect('data.db')
-    c = conn.cursor()
-    # Unique timestamp for plotting
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    c.execute("INSERT INTO counts VALUES (?, ?, ?, ?)", (now, e, d, i))
-    # Keep only 24 hours of data (roughly 720 records if every 2 mins)
-    c.execute("DELETE FROM counts WHERE timestamp < datetime('now', '-1 day')")
-    conn.commit()
-    conn.close()
+    if not db:
+        print("❌ Firebase not initialized. Skipping log.")
+        return
+    
+    try:
+        # Unique timestamp for plotting
+        now = datetime.datetime.now()
+        timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Log to Firestore
+        doc_ref = db.collection('counts').document(timestamp_str)
+        doc_ref.set({
+            'timestamp': now,
+            'entered': e,
+            'departed': d,
+            'inside': i
+        })
+        
+        # Cleanup old data (Keep last 100 records for performance in this simple version)
+        # In a real app, you'd use a scheduled task or a more sophisticated query
+    except Exception as err:
+        print(f"❌ Error logging to Firebase: {err}")
 
 @app.route('/')
 def index():
@@ -63,17 +96,33 @@ def get_data():
 
 @app.route('/history', methods=['GET'])
 def get_history():
-    conn = sqlite3.connect('data.db')
-    c = conn.cursor()
-    c.execute("SELECT timestamp, inside FROM counts ORDER BY timestamp ASC")
-    rows = c.fetchall()
-    conn.close()
+    if not db:
+        print("❌ Firebase not initialized.")
+        return jsonify({"labels": [], "values": []})
     
-    # Format for Chart.js
-    labels = [row[0] for row in rows]
-    values = [row[1] for row in rows]
-    
-    return jsonify({"labels": labels, "values": values})
+    try:
+        # Get last 50 records to keep chart clean
+        # Use .get() instead of .stream() because limit_to_last doesn't support streaming
+        docs = db.collection('counts').order_by('timestamp', direction=firestore.Query.ASCENDING).limit_to_last(50).get()
+        
+        labels = []
+        values = []
+        count = 0
+        for doc in docs:
+            d = doc.to_dict()
+            ts = d.get('timestamp')
+            if ts:
+                # Firestore timestamps are datetime objects
+                labels.append(ts.strftime("%H:%M:%S"))
+            else:
+                labels.append(str(doc.id))
+            values.append(int(d.get('inside', 0)))
+            count += 1
+            
+        return jsonify({"labels": labels, "values": values})
+    except Exception as err:
+        print(f"❌ Error fetching history: {err}")
+        return jsonify({"labels": [], "values": [], "error": str(err)})
 
 @app.route('/reset', methods=['POST'])
 def reset():
