@@ -10,12 +10,29 @@ CORS(app)
 
 # Initialize Firebase
 # Make sure to place your 'serviceAccountKey.json' in the root directory
-if os.path.exists('serviceAccountKey.json'):
-    cred = credentials.Certificate('serviceAccountKey.json')
-    firebase_admin.initialize_app(cred)
-    db = firestore.client()
-else:
-    print("⚠️ Warning: serviceAccountKey.json not found. Firebase will not be initialized.")
+try:
+    if os.path.exists('serviceAccountKey.json'):
+        print("📂 Found serviceAccountKey.json, initializing Firebase...")
+        cred = credentials.Certificate('serviceAccountKey.json')
+        firebase_admin.initialize_app(cred)
+        db = firestore.client()
+        print("✅ Firebase initialized successfully!")
+    else:
+        print("⚠️ Warning: serviceAccountKey.json not found in:", os.getcwd())
+        # Try loading from environment variable for Render
+        import json
+        firebase_config = os.environ.get('FIREBASE_SERVICE_ACCOUNT')
+        if firebase_config:
+            print("🌐 Found FIREBASE_SERVICE_ACCOUNT environment variable, initializing...")
+            cred_dict = json.loads(firebase_config)
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+            db = firestore.client()
+        else:
+            print("❌ No Firebase credentials found. Database will NOT work.")
+            db = None
+except Exception as e:
+    print(f"🔥 Firebase Initialization Error: {e}")
     db = None
 
 # In-memory storage for sensor data (fallback/cache)

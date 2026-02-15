@@ -3,8 +3,8 @@ import time
 import random
 
 # Configuration
-# SERVER_URL = "https://dash-board-visitor-counter.onrender.com"
-SERVER_URL = "http://127.0.0.1:5001"
+SERVER_URL = "https://dash-board-visitor-counter-1.onrender.com"
+#SERVER_URL = "http://127.0.0.1:5001"
 UPDATE_ENDPOINT = f"{SERVER_URL}/update"
 COMMAND_ENDPOINT = f"{SERVER_URL}/get_command"
 
