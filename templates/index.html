@@ -7,6 +7,7 @@
     <title>Crowd Monitor | Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -31,12 +32,51 @@
             </div>
         </div>
 
+        <div class="chart-container">
+            <canvas id="historyChart"></canvas>
+        </div>
+
         <div class="controls">
             <button class="btn-reset" onclick="sendReset()">SEND RESET (0)</button>
         </div>
     </div>
 
     <script>
+        // Chart.js Setup
+        const ctx = document.getElementById('historyChart').getContext('2d');
+        const historyChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'People Inside (Historical)',
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    data: [],
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        ticks: { color: '#94a3b8' },
+                        grid: { color: 'rgba(255,255,255,0.05)' }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#94a3b8' },
+                        grid: { color: 'rgba(255,255,255,0.05)' }
+                    }
+                },
+                plugins: {
+                    legend: { labels: { color: '#f8fafc' } }
+                }
+            }
+        });
+
         async function updateStats() {
             try {
                 const response = await fetch('/data');
@@ -45,8 +85,24 @@
                 document.getElementById('entered').textContent = data.entered;
                 document.getElementById('departed').textContent = data.departed;
                 document.getElementById('inside').textContent = data.inside;
+
+                // Update Chart
+                updateChart();
             } catch (error) {
                 console.error('Error fetching data:', error);
+            }
+        }
+
+        async function updateChart() {
+            try {
+                const res = await fetch('/history');
+                const historyData = await res.json();
+
+                historyChart.data.labels = historyData.labels;
+                historyChart.data.datasets[0].data = historyData.values;
+                historyChart.update('none'); // Update without animation for performance
+            } catch (e) {
+                console.error('Chart update error:', e);
             }
         }
 

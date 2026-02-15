@@ -1,4 +1,8 @@
 from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
+import sqlite3
+import datetime
+import os
 
 app = Flask(__name__)
 
@@ -12,6 +16,27 @@ data = {
 # Command flag (0 if reset requested, 1 otherwise)
 command = 1
 
+def init_db():
+    conn = sqlite3.connect('data.db')
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS counts 
+                 (timestamp DATETIME, entered INTEGER, departed INTEGER, inside INTEGER)''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def log_data(e, d, i):
+    conn = sqlite3.connect('data.db')
+    c = conn.cursor()
+    # Unique timestamp for plotting
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute("INSERT INTO counts VALUES (?, ?, ?, ?)", (now, e, d, i))
+    # Keep only 24 hours of data (roughly 720 records if every 2 mins)
+    c.execute("DELETE FROM counts WHERE timestamp < datetime('now', '-1 day')")
+    conn.commit()
+    conn.close()
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -24,6 +49,10 @@ def update():
         data["entered"] = new_data.get("entered", data["entered"])
         data["departed"] = new_data.get("departed", data["departed"])
         data["inside"] = new_data.get("inside", data["inside"])
+        
+        # Log to database on update
+        log_data(data["entered"], data["departed"], data["inside"])
+        
         return jsonify({"status": "success", "message": "Data updated"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
@@ -31,6 +60,20 @@ def update():
 @app.route('/data', methods=['GET'])
 def get_data():
     return jsonify(data)
+
+@app.route('/history', methods=['GET'])
+def get_history():
+    conn = sqlite3.connect('data.db')
+    c = conn.cursor()
+    c.execute("SELECT timestamp, inside FROM counts ORDER BY timestamp ASC")
+    rows = c.fetchall()
+    conn.close()
+    
+    # Format for Chart.js
+    labels = [row[0] for row in rows]
+    values = [row[1] for row in rows]
+    
+    return jsonify({"labels": labels, "values": values})
 
 @app.route('/reset', methods=['POST'])
 def reset():
